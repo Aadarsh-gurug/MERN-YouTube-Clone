@@ -49,13 +49,30 @@ export const uploadVideoController = async (req, res) => {
 
 export const getVideoController = async (req, res) => {
     try {
-        const file = await gfs.files.findOne({ filename: req.params.filename })
+          const file = await gfs.files.findOne({ filename: req.params.filename })
         if (!file) {
-            return res.status(200).json({ message: 'Video Does Not Exist.', error, success: false })
+            return res.status(500).send({ message: 'File Note Exist.' })
         }
-        const readStream = gridfsBucket.openDownloadStream(file._id);
-        res.set("Content-type", file.contentType)
-        readStream.pipe(res);
+        const range = req.headers.range;
+        if (range && file?.contentType.includes('video')) {
+            const videoSize = file.length;
+            const start = Number(range.replace(/\D/g, ""));
+            const end = videoSize - 1;
+            const contentLength = end - start + 1;
+            const headers = {
+                "Content-Range": `bytes ${start}-${end}/${videoSize}`,
+                "Accept-Ranges": "bytes",
+                "Content-Length": contentLength,
+                "Content-Type": file.contentType,
+            };
+            const readStream = gridfsBucket.openDownloadStream(file?._id, { start, end })
+            res.writeHead(206, headers);
+            readStream.pipe(res);
+        } else {
+            const readStream = gridfsBucket.openDownloadStream(file._id);
+            res.set("Content-type", file.contentType)
+            readStream.pipe(res);
+        }
     } catch (error) {
         return res.status(500).json({ message: 'Error while getting the video.', error, success: false })
     }
